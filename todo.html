@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dreamy Planner - Multi User</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{margin:0;font-family:"Poppins",sans-serif;background:linear-gradient(135deg,#a47cff,#d7b4ff);color:#333;}
+.container{width:95%;max-width:1200px;margin:25px auto;padding:20px;background:#ffffffdd;border-radius:20px;box-shadow:0 10px 40px rgba(0,0,0,0.15);}
+h1,h2,h3{text-align:center;color:#6a32ff;}
+.user-box{display:flex;justify-content:center;margin-bottom:20px;}
+.user-box select{padding:10px;font-size:16px;border-radius:10px;border:2px solid #a47cff;background:#f9f4ff;}
+#taskForm{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
+#taskForm input,#taskForm select,#taskForm button{padding:10px;border-radius:10px;border:2px solid #a47cff;background:#f9f4ff;}
+#taskForm button{background:#7b3dff;color:white;border:none;}
+#taskForm button:hover{background:#5b22d6;}
+@media(max-width:768px){#taskForm{grid-template-columns:1fr 1fr;}}
+@media(max-width:480px){#taskForm{grid-template-columns:1fr;}}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+@media(max-width:600px){.calendar-grid{grid-template-columns:repeat(2,1fr);}}
+.calendar-day{height:90px;background:#f4ecff;border-radius:10px;padding:6px;font-size:14px;position:relative;border:1px solid #d7c9ff;cursor:pointer;}
+.calendar-day .date-num{font-weight:bold;color:#6a32ff;}
+.calendar-day .dot{width:8px;height:8px;background:#7b3dff;border-radius:50%;position:absolute;bottom:6px;right:6px;}
+.week-day{background:#ede4ff;padding:12px;margin:8px 0;border-radius:10px;}
+@media(max-width:600px){.week-day{font-size:14px;}}
+.task-item{padding:5px 0;display:flex;justify-content:space-between;}
+.task-item.completed span{text-decoration:line-through;color:#0ba600;}
+.chartBox{margin-top:30px;padding:15px;background:#f1e7ff;border-radius:15px;}
+canvas{max-width:100%;}
+.btn{padding:7px 12px;border-radius:12px;background:#7b3dff;border:none;color:white;margin-left:4px;cursor:pointer;}
+.btn:hover{opacity:0.85;}
+.btn-del{background:#ff3b6b;}
+.btn-del:hover{background:#d92e56;}
+.modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;overflow:auto;background:rgba(0,0,0,0.6);}
+.modal-content{background:#fff;margin:15% auto;padding:20px;border-radius:15px;width:90%;max-width:400px;position:relative;}
+.modal-content h3{text-align:center;color:#6a32ff;}
+.close{position:absolute;top:10px;right:15px;font-size:22px;font-weight:bold;color:#333;cursor:pointer;}
+.close:hover{color:#7b3dff;}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h1>💜 Dreamy Planner</h1>
+
+<div class="user-box">
+<select id="userSelect"></select>
+</div>
+
+<form id="taskForm">
+<input id="taskName" placeholder="Task Name" required>
+<input id="taskDate" type="date" required>
+<select id="taskRepeat">
+<option value="none">No Repeat</option>
+<option value="weekly">Repeat Weekly</option>
+<option value="monthly">Repeat Monthly</option>
+</select>
+<button type="submit">Add Task</button>
+</form>
+
+<h2>📅 Monthly Calendar</h2>
+<h3 id="calendarMonthLabel"></h3>
+<div class="calendar-grid" id="calendarGrid"></div>
+
+<div class="weekly-section">
+<h2>📆 Weekly Tasks</h2>
+<div id="weeklyList"></div>
+</div>
+
+<div class="chartBox">
+<h2>📊 Weekly Progress</h2>
+<canvas id="weeklyChart"></canvas>
+</div>
+<div class="chartBox">
+<h2>📈 Monthly Progress</h2>
+<canvas id="monthlyChart"></canvas>
+</div>
+</div>
+
+<div id="dayModal" class="modal">
+<div class="modal-content">
+<span class="close" id="modalClose">&times;</span>
+<h3 id="modalDateLabel">Add Task</h3>
+<input type="text" id="modalTaskName" placeholder="Task Name">
+<select id="modalTaskRepeat">
+<option value="none">No Repeat</option>
+<option value="weekly">Repeat Weekly</option>
+<option value="monthly">Repeat Monthly</option>
+</select>
+<button id="modalAddTaskBtn">Add Task</button>
+</div>
+</div>
+
+<script>
+// ----- Storage -----
+function loadData(){ return JSON.parse(localStorage.getItem("dreamyPlanner"))||{users:{Muskan:{tasks:[]}},activeUser:"Muskan"};}
+function saveData(){ localStorage.setItem("dreamyPlanner",JSON.stringify(appData)); }
+let appData=loadData();
+
+// ----- User -----
+const userSelect=document.getElementById("userSelect");
+function populateUsers(){
+    userSelect.innerHTML="";
+    Object.keys(appData.users).forEach(u=>{
+        let opt=document.createElement("option");
+        opt.value=u; opt.innerText=u;
+        userSelect.appendChild(opt);
+    });
+    let addOpt=document.createElement("option"); addOpt.value="__add__"; addOpt.innerText="Add New User";
+    userSelect.appendChild(addOpt);
+    userSelect.value=appData.activeUser;
+}
+populateUsers();
+
+userSelect.onchange=()=>{
+    if(userSelect.value==="__add__"){
+        let newName=prompt("Enter new user name:");
+        if(newName && !appData.users[newName]){
+            appData.users[newName]={tasks:[]};
+            appData.activeUser=newName;
+            saveData();
+            populateUsers();
+        } else { alert("Invalid or duplicate name"); userSelect.value=appData.activeUser; return; }
+    } else { appData.activeUser=userSelect.value; saveData(); }
+    autoMonthlyCleanup();
+    renderAll();
+};
+
+// ----- Weekly Form -----
+const taskForm=document.getElementById("taskForm");
+taskForm.addEventListener("submit",e=>{
+    e.preventDefault();
+    addTask(taskName.value,taskDate.value,taskRepeat.value);
+    taskName.value=""; taskDate.value=""; taskRepeat.value="none";
+});
+
+// ----- Add Task Function -----
+function addTask(name,date,repeat){
+    const task={id:Date.now(),name,date,repeat,completed:false};
+    appData.users[appData.activeUser].tasks.push(task);
+    saveData();
+    renderAll();
+}
+
+// ----- Auto Monthly Cleanup -----
+function autoMonthlyCleanup(){
+    const now=new Date();
+    const currentMonth=now.getMonth();
+    const currentYear=now.getFullYear();
+    let users=appData.users;
+    for(let user in users){
+        let filtered=[];
+        users[user].tasks.forEach(task=>{
+            let d=new Date(task.date);
+            let isOlderMonth=(d.getMonth()<currentMonth || d.getFullYear()<currentYear);
+            if(task.repeat!=="none"){ filtered.push(task); return; }
+            if(!isOlderMonth){ filtered.push(task); }
+        });
+        users[user].tasks=filtered;
+    }
+    saveData();
+}
+
+// ----- Toggle Complete / Delete -----
+function toggleComplete(id){
+    let tasks=appData.users[appData.activeUser].tasks;
+    let t=tasks.find(x=>x.id===id);
+    if(t) t.completed=!t.completed;
+    saveData(); renderAll();
+}
+function deleteTask(id){
+    if(!confirm("Delete this task?")) return;
+    let tasks=appData.users[appData.activeUser].tasks;
+    appData.users[appData.activeUser].tasks=tasks.filter(t=>t.id!==id);
+    saveData(); renderAll();
+}
+
+// ----- Render Weekly -----
+function renderWeekly(){
+    const weekly=document.getElementById("weeklyList");
+    weekly.innerHTML="";
+    const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const now=new Date();
+    const weekStart=new Date(now.setDate(now.getDate()-now.getDay()));
+    for(let i=0;i<7;i++){
+        let d=new Date(weekStart); d.setDate(weekStart.getDate()+i);
+        let div=document.createElement("div");
+        div.className="week-day";
+        div.innerHTML=`<b>${days[i]} - ${d.toDateString()}</b>`;
+        const userTasks=appData.users[appData.activeUser].tasks.filter(t=>{
+            return t.date===d.toISOString().split("T")[0];
+        });
+        userTasks.forEach(t=>{
+            let item=document.createElement("div");
+            item.className="task-item"+(t.completed?" completed":"");
+            item.innerHTML=`
+                <span>${t.name}</span>
+                <div>
+                    <button class="btn" onclick="toggleComplete(${t.id})">✔</button>
+                    <button class="btn btn-del" onclick="deleteTask(${t.id})">🗑</button>
+                </div>
+            `;
+            div.appendChild(item);
+        });
+        weekly.appendChild(div);
+    }
+}
+
+// ----- Render Calendar -----
+function renderCalendar(){
+    const grid=document.getElementById("calendarGrid");
+    grid.innerHTML="";
+    const now=new Date();
+    const year=now.getFullYear(), month=now.getMonth();
+    document.getElementById("calendarMonthLabel").innerText=
+        now.toLocaleString("default",{month:"long"})+" "+year;
+    const firstDay=new Date(year,month,1).getDay();
+    const daysInMonth=new Date(year,month+1,0).getDate();
+    for(let i=0;i<firstDay;i++) grid.appendChild(document.createElement("div"));
+    for(let d=1;d<=daysInMonth;d++){
+        const div=document.createElement("div");
+        div.className="calendar-day";
+        div.dataset.date=new Date(year,month,d).toISOString().split("T")[0];
+        div.innerHTML=`<div class="date-num">${d}</div>`;
+        const userTasks=appData.users[appData.activeUser].tasks;
+        const hasTasks=userTasks.some(t=>{
+            const td=new Date(t.date);
+            return td.getDate()===d && td.getMonth()===month;
+        });
+        if(hasTasks){ const dot=document.createElement("div"); dot.className="dot"; div.appendChild(dot); }
+        div.onclick=()=>openModal(div.dataset.date);
+        grid.appendChild(div);
+    }
+}
+
+// ----- Charts -----
+let weeklyChart, monthlyChart;
+function renderCharts(){
+    const tasks=appData.users[appData.activeUser].tasks;
+    const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    let weeklyData=[0,0,0,0,0,0,0];
+    tasks.forEach(t=>{ if(t.completed) weeklyData[new Date(t.date).getDay()]++; });
+    if(weeklyChart) weeklyChart.destroy();
+    weeklyChart=new Chart(document.getElementById("weeklyChart"),{
+        type:"bar",
+        data:{labels:days,datasets:[{label:"Completed",data:weeklyData,backgroundColor:"#7b3dff"}]}
+    });
+    let monthCounts=Array(31).fill(0);
+    tasks.forEach(t=>{ if(t.completed) monthCounts[new Date(t.date).getDate()-1]++; });
+    if(monthlyChart) monthlyChart.destroy();
+    monthlyChart=new Chart(document.getElementById("monthlyChart"),{
+        type:"line",
+        data:{labels:Array.from({length:31},(_,i)=>i+1),datasets:[{label:"Completed",data:monthCounts,borderColor:"#5b22d6",backgroundColor:"#e0ccff"}]}
+    });
+}
+
+// ----- Modal -----
+const modal=document.getElementById("dayModal");
+const modalClose=document.getElementById("modalClose");
+const modalDateLabel=document.getElementById("modalDateLabel");
+const modalTaskName=document.getElementById("modalTaskName");
+const modalTaskRepeat=document.getElementById("modalTaskRepeat");
+const modalAddTaskBtn=document.getElementById("modalAddTaskBtn");
+let selectedDate="";
+function openModal(date){
+    selectedDate=date;
+    modal.style.display="block";
+    modalDateLabel.innerText="Add Task for "+date;
+    modalTaskName.value=""; modalTaskRepeat.value="none";
+}
+modalClose.onclick=()=>{ modal.style.display="none"; }
+window.onclick=e=>{ if(e.target==modal) modal.style.display="none"; }
+modalAddTaskBtn.onclick=()=>{
+    if(modalTaskName.value.trim()===""){ alert("Enter task name"); return; }
+    addTask(modalTaskName.value,selectedDate,modalTaskRepeat.value);
+    modal.style.display="none";
+};
+
+// ----- Render All -----
+function renderAll(){ renderCalendar(); renderWeekly(); renderCharts(); }
+
+// ----- Init -----
+autoMonthlyCleanup(); renderAll();
+</script>
+</body>
+</html>
